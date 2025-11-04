@@ -31,7 +31,7 @@
     </div>
   </nav>
 
-  <!-- 🔹 Temporizador aquí -->
+  <!-- 🔹 Temporizador -->
   <div class="temporizador">
     ⏱ Tiempo restante: <span id="contador">02:00</span>
   </div>
@@ -50,6 +50,10 @@
       Swal.fire("Error", "Debes iniciar sesión para hacer el examen.", "error")
         .then(() => window.location.href = "certificaciones.html");
     }
+
+    let tiempoRestante = 0;
+    const contador = document.getElementById("contador");
+    let intervalo;
 
     async function cargarPreguntas() {
       const res = await fetch("http://localhost:3000/api/examen/start", {
@@ -81,20 +85,50 @@
       });
 
       document.getElementById("enviarBtn").style.display = "block";
+
+      // 🔹 Iniciar temporizador
+  tiempoRestante = Number(data.tiempoRestante) || 120;
+      iniciarTemporizador();
     }
 
-    cargarPreguntas();
+    async function obtenerTiempoRestante() {
+      const res = await fetch("http://localhost:3000/api/examen/time", {
+        method: "GET",
+        headers: { "Authorization": "Bearer " + token }
+      });
+      const data = await res.json();
+      if (!data.error) tiempoRestante = data.tiempoRestante;
+    }
 
+    function iniciarTemporizador() {
+      clearInterval(intervalo);
+
+      intervalo = setInterval(async () => {
+        const minutos = Math.floor(tiempoRestante / 60);
+        const segundos = tiempoRestante % 60;
+        contador.textContent = `${minutos.toString().padStart(2, "0")}:${segundos.toString().padStart(2, "0")}`;
+
+        if (tiempoRestante <= 0) {
+          clearInterval(intervalo);
+          enviarExamenAuto();
+        }
+
+        tiempoRestante--;
+
+        // 🔹 Sincronizar cada 10 segundos
+        if (tiempoRestante % 10 === 0) {
+          await obtenerTiempoRestante();
+        }
+      }, 1000);
+    }
+
+    // --- Enviar examen automáticamente ---
     async function enviarExamenAuto() {
       const inputs = document.querySelectorAll("input[type=radio]:checked");
       const respuestas = Array.from(inputs).map(input => ({
         id: parseInt(input.name.replace("preg", "")),
         respuesta: input.value
       }));
-
-      if (respuestas.length < 8) {
-        Swal.fire("Tiempo agotado", "El tiempo ha terminado. Se enviará el examen automáticamente.", "warning");
-      }
 
       const res = await fetch("http://localhost:3000/api/examen/submit", {
         method: "POST",
@@ -111,31 +145,16 @@
         Swal.fire("¡Felicidades!", `Calificación: ${data.calificacion}%`, "success")
           .then(() => window.open("http://localhost:3000/" + data.certificado, "_blank"));
       } else {
-        Swal.fire("No aprobado", `${data.mensaje}\nCalificación: ${data.calificacion}%`, "error")
+        Swal.fire("No aprobado", `${data.error || "No alcanzaste el puntaje mínimo."}\nCalificación: ${data.calificacion || 0}%`, "error")
           .then(() => window.location.href = "certificaciones.html");
       }
     }
 
     document.getElementById("enviarBtn").addEventListener("click", enviarExamenAuto);
 
-    // 🔹 TEMPORIZADOR DE 2 MINUTOS
-    let tiempoRestante = 120; // segundos (2 minutos)
-    const contador = document.getElementById("contador");
-
-    const intervalo = setInterval(() => {
-      const minutos = Math.floor(tiempoRestante / 60);
-      const segundos = tiempoRestante % 60;
-      contador.textContent = `${minutos.toString().padStart(2, "0")}:${segundos.toString().padStart(2, "0")}`;
-
-      if (tiempoRestante <= 0) {
-        clearInterval(intervalo);
-        enviarExamenAuto(); // Enviar examen automáticamente
-      }
-
-      tiempoRestante--;
-    }, 1000);
+    cargarPreguntas();
   </script>
-  <!-- Footer -->
+
   <footer>
     <p>© 2025 CodeVerse. Todos los derechos reservados.</p>
     <p>Síguenos en nuestras redes:</p>
