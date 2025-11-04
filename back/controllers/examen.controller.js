@@ -12,6 +12,7 @@ function saveUsers(users) {
 }
 
 // --- Iniciar examen ---
+// --- Iniciar examen ---
 exports.startExam = (req, res) => {
   const userId = req.userId;
   const users = loadUsers();
@@ -34,7 +35,24 @@ exports.startExam = (req, res) => {
     opciones: p.opciones.sort(() => Math.random() - 0.5)
   }));
 
-  res.json({ examen });
+  // 🔹 Si ya había iniciado, calcula tiempo restante
+  const ahora = Date.now();
+  const duracionExamen = 120000; // 2 minutos en milisegundos
+
+  if (!user.inicioExamen) {
+    user.inicioExamen = ahora;
+    user.duracionExamen = duracionExamen;
+  }
+
+  const tiempoPasado = ahora - user.inicioExamen;
+  const tiempoRestante = Math.max(0, (user.duracionExamen || duracionExamen) - tiempoPasado);
+
+  saveUsers(users);
+
+  res.json({
+    examen,
+    tiempoRestante: Math.floor(tiempoRestante / 1000) // segundos
+  });
 };
 
 // --- Enviar examen ---
@@ -49,6 +67,16 @@ exports.submitExam = (req, res) => {
   if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
   if (user.examenHecho)
     return res.status(403).json({ error: "Ya realizaste el examen anteriormente." });
+
+  // 🔹 Verificar si el tiempo ya terminó
+  const ahora = Date.now();
+  const tiempoPasado = ahora - (user.inicioExamen || 0);
+  if (tiempoPasado > (user.duracionExamen || 120000)) {
+    user.examenHecho = true;
+    user.aprobado = false;
+    saveUsers(users);
+    return res.status(403).json({ error: "El tiempo del examen ha expirado." });
+  }
 
   let correctas = 0;
 
@@ -73,8 +101,6 @@ exports.submitExam = (req, res) => {
   if (aprobado) {
     const { createCertificate } = require("../utils/pdfGenerator");
     const fullPath = createCertificate(user.nombre, calificacion);
-
-    // Devuelve la ruta relativa para que el front la abra correctamente
     certificadoPath = "certificados/" + path.basename(fullPath);
   }
 
